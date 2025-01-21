@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.8
+@Tags(<String>['flutter-test-driver'])
+library;
 
 import 'package:file/file.dart';
 
@@ -18,8 +19,8 @@ const Duration requiredLifespan = Duration(seconds: 5);
 
 void main() {
   final BasicProject project = BasicProject();
-  FlutterRunTestDriver flutter;
-  Directory tempDir;
+  late FlutterRunTestDriver flutter;
+  late Directory tempDir;
 
   setUp(() async {
     tempDir = createResolvedTempDirectorySync('lifetime_test.');
@@ -38,9 +39,12 @@ void main() {
     expect(flutter.hasExited, equals(false));
   });
 
-  testWithoutContext('flutter run does not terminate when a debugger is attached and pause-on-exceptions', () async {
-    await flutter.run(withDebugger: true, pauseOnExceptions: true);
-    await Future<void>.delayed(requiredLifespan);
-    expect(flutter.hasExited, equals(false));
-  });
+  testWithoutContext(
+    'flutter run does not terminate when a debugger is attached and pause-on-exceptions',
+    () async {
+      await flutter.run(withDebugger: true, pauseOnExceptions: true);
+      await Future<void>.delayed(requiredLifespan);
+      expect(flutter.hasExited, equals(false));
+    },
+  );
 }

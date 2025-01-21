@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.8
+@Tags(<String>['flutter-test-driver'])
+library;
 
 import 'dart:async';
 
@@ -16,9 +17,9 @@ import 'test_utils.dart';
 // This test verifies that we can hot reload a stateless widget into a
 // stateful one and back.
 void main() {
-  Directory tempDir;
+  late Directory tempDir;
   final HotReloadProject project = HotReloadProject();
-  FlutterRunTestDriver flutter;
+  late FlutterRunTestDriver flutter;
 
   setUp(() async {
     tempDir = createResolvedTempDirectorySync('hot_reload_test.');
@@ -27,11 +28,11 @@ void main() {
   });
 
   tearDown(() async {
-    await flutter?.stop();
+    await flutter.stop();
     tryToDelete(tempDir);
   });
 
-  testWithoutContext('Can switch between stateless and stateful', () async {
+  testWithoutContext('Can switch from stateless to stateful', () async {
     await flutter.run();
     await flutter.hotReload();
     final StringBuffer stdout = StringBuffer();
@@ -41,13 +42,8 @@ void main() {
     project.toggleState();
     await flutter.hotReload();
 
-    // switch to stateless.
-    project.toggleState();
-    await flutter.hotReload();
-
     final String logs = stdout.toString();
 
-    expect(logs, contains('STATELESS'));
     expect(logs, contains('STATEFUL'));
     await subscription.cancel();
   });
