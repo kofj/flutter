@@ -2,41 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:args/args.dart';
-import 'package:process/process.dart';
-
-import '../artifacts.dart';
 import '../base/common.dart';
 import '../base/file_system.dart';
 import '../base/io.dart';
 import '../base/logger.dart';
-import '../base/platform.dart';
-import '../base/terminal.dart';
 import '../dart/analysis.dart';
 import 'analyze_base.dart';
 
 class AnalyzeContinuously extends AnalyzeBase {
   AnalyzeContinuously(
-    ArgResults argResults,
-    List<String> repoRoots,
+    super.argResults,
     List<Directory> repoPackages, {
-    required FileSystem fileSystem,
-    required Logger logger,
-    required Terminal terminal,
-    required Platform platform,
-    required ProcessManager processManager,
-    required Artifacts artifacts,
-  }) : super(
-        argResults,
-        repoPackages: repoPackages,
-        repoRoots: repoRoots,
-        fileSystem: fileSystem,
-        logger: logger,
-        platform: platform,
-        terminal: terminal,
-        processManager: processManager,
-        artifacts: artifacts,
-      );
+    required super.fileSystem,
+    required super.logger,
+    required super.terminal,
+    required super.platform,
+    required super.processManager,
+    required super.artifacts,
+    required super.suppressAnalytics,
+  }) : super(repoPackages: repoPackages);
 
   String? analysisTarget;
   bool firstAnalysis = true;
@@ -54,13 +38,10 @@ class AnalyzeContinuously extends AnalyzeBase {
       final PackageDependencyTracker dependencies = PackageDependencyTracker();
       dependencies.checkForConflictingDependencies(repoPackages, dependencies);
 
-      directories = repoRoots;
+      directories = <String>[flutterRoot];
       analysisTarget = 'Flutter repository';
 
       logger.printTrace('Analyzing Flutter repository:');
-      for (final String projectPath in repoRoots) {
-        logger.printTrace('  ${fileSystem.path.relative(projectPath)}');
-      }
     } else {
       directories = <String>[fileSystem.currentDirectory.path];
       analysisTarget = fileSystem.currentDirectory.path;
@@ -75,6 +56,7 @@ class AnalyzeContinuously extends AnalyzeBase {
       processManager: processManager,
       terminal: terminal,
       protocolTrafficLog: protocolTrafficLog,
+      suppressAnalytics: suppressAnalytics,
     );
     server.onAnalyzing.listen((bool isAnalyzing) => _handleAnalysisStatus(server, isAnalyzing));
     server.onErrors.listen(_handleAnalysisErrors);
@@ -125,9 +107,7 @@ class AnalyzeContinuously extends AnalyzeBase {
 
       for (final AnalysisError error in sortedErrors) {
         logger.printStatus(error.toString());
-        if (error.code != null) {
-          logger.printTrace('error code: ${error.code}');
-        }
+        logger.printTrace('error code: ${error.code}');
       }
 
       dumpErrors(sortedErrors.map<String>((AnalysisError error) => error.toLegacyString()));
@@ -147,7 +127,9 @@ class AnalyzeContinuously extends AnalyzeBase {
 
       if (firstAnalysis && isBenchmarking) {
         writeBenchmark(analysisTimer, issueCount);
-        server.dispose().whenComplete(() { exit(issueCount > 0 ? 1 : 0); });
+        server.dispose().whenComplete(() {
+          exit(issueCount > 0 ? 1 : 0);
+        });
       }
 
       firstAnalysis = false;

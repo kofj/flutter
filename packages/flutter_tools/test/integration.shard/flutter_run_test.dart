@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.8
+@Tags(<String>['flutter-test-driver'])
+library;
 
 import 'package:file/file.dart';
 import 'package:flutter_tools/src/base/io.dart';
@@ -14,9 +15,9 @@ import 'test_driver.dart';
 import 'test_utils.dart';
 
 void main() {
-  Directory tempDir;
+  late Directory tempDir;
   final BasicProject project = BasicProject();
-  FlutterRunTestDriver flutter;
+  late FlutterRunTestDriver flutter;
 
   setUp(() async {
     tempDir = createResolvedTempDirectorySync('run_test.');
@@ -34,18 +35,19 @@ void main() {
     // like https://github.com/flutter/flutter/issues/21418 which were skipped
     // over because other integration tests run using flutter-tester which short-cuts
     // some of the checks for devices.
-    final String flutterBin = fileSystem.path.join(getFlutterRoot(), 'bin', 'flutter');
 
     const ProcessManager processManager = LocalProcessManager();
-    final ProcessResult proc = await processManager.run(
-      <String>[flutterBin, 'run', '-d', 'invalid-device-id'],
-      workingDirectory: tempDir.path,
-    );
+    final ProcessResult proc = await processManager.run(<String>[
+      flutterBin,
+      'run',
+      '-d',
+      'invalid-device-id',
+    ], workingDirectory: tempDir.path);
 
     expect(proc.stdout, isNot(contains('flutter has exited unexpectedly')));
     expect(proc.stderr, isNot(contains('flutter has exited unexpectedly')));
-    if (!proc.stderr.toString().contains('Unable to locate a development')
-        && !proc.stdout.toString().contains('No devices found with name or id matching')) {
+    if (!proc.stderr.toString().contains('Unable to locate a development') &&
+        !proc.stdout.toString().contains('No supported devices found with name or id matching')) {
       fail("'flutter run -d invalid-device-id' did not produce the expected error");
     }
   });
@@ -69,5 +71,11 @@ void main() {
       continuePollingValue: '',
       matches: isNotEmpty,
     );
+  });
+
+  testWithoutContext('reports deviceId and mode in app.start event', () async {
+    await flutter.run();
+    expect(flutter.currentRunningDeviceId, 'flutter-tester');
+    expect(flutter.currentRunningMode, 'debug');
   });
 }

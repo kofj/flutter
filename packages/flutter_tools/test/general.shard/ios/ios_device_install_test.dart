@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.8
-
 import 'package:file/memory.dart';
 import 'package:flutter_tools/src/artifacts.dart';
 import 'package:flutter_tools/src/base/file_system.dart';
@@ -12,12 +10,15 @@ import 'package:flutter_tools/src/base/logger.dart';
 import 'package:flutter_tools/src/base/platform.dart';
 import 'package:flutter_tools/src/build_info.dart';
 import 'package:flutter_tools/src/cache.dart';
+import 'package:flutter_tools/src/device.dart';
 import 'package:flutter_tools/src/ios/application_package.dart';
+import 'package:flutter_tools/src/ios/core_devices.dart';
 import 'package:flutter_tools/src/ios/devices.dart';
 import 'package:flutter_tools/src/ios/ios_deploy.dart';
 import 'package:flutter_tools/src/ios/iproxy.dart';
 import 'package:flutter_tools/src/ios/mac.dart';
-import 'package:meta/meta.dart';
+import 'package:flutter_tools/src/ios/xcode_debug.dart';
+import 'package:test/fake.dart';
 
 import '../../src/common.dart';
 import '../../src/fake_process_manager.dart';
@@ -28,10 +29,10 @@ const Map<String, String> kDyLdLibEntry = <String, String>{
 };
 
 void main() {
-  Artifacts artifacts;
-  String iosDeployPath;
-  FileSystem fileSystem;
-  Directory bundleDirectory;
+  late Artifacts artifacts;
+  late String iosDeployPath;
+  late FileSystem fileSystem;
+  late Directory bundleDirectory;
 
   setUp(() {
     artifacts = Artifacts.test();
@@ -47,22 +48,15 @@ void main() {
       applicationPackage: bundleDirectory,
     );
     final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-      FakeCommand(command: <String>[
-        iosDeployPath,
-        '--id',
-        '1234',
-        '--bundle',
-        '/',
-        '--no-wifi',
-      ], environment: const <String, String>{
-        'PATH': '/usr/bin:null',
-        ...kDyLdLibEntry,
-      })
+      FakeCommand(
+        command: <String>[iosDeployPath, '--id', '1234', '--bundle', '/', '--no-wifi'],
+        environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+      ),
     ]);
     final IOSDevice device = setUpIOSDevice(
       processManager: processManager,
       fileSystem: fileSystem,
-      interfaceType: IOSDeviceConnectionInterface.usb,
+      interfaceType: DeviceConnectionInterface.attached,
       artifacts: artifacts,
     );
     final bool wasInstalled = await device.installApp(iosApp);
@@ -78,22 +72,38 @@ void main() {
       applicationPackage: bundleDirectory,
     );
     final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-      FakeCommand(command: <String>[
-        iosDeployPath,
-        '--id',
-        '1234',
-        '--bundle',
-        '/',
-      ], environment: const <String, String>{
-        'PATH': '/usr/bin:null',
-        ...kDyLdLibEntry,
-      })
+      FakeCommand(
+        command: <String>[iosDeployPath, '--id', '1234', '--bundle', '/'],
+        environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+      ),
     ]);
     final IOSDevice device = setUpIOSDevice(
       processManager: processManager,
       fileSystem: fileSystem,
-      interfaceType: IOSDeviceConnectionInterface.network,
+      interfaceType: DeviceConnectionInterface.wireless,
       artifacts: artifacts,
+    );
+    final bool wasInstalled = await device.installApp(iosApp);
+
+    expect(wasInstalled, true);
+    expect(processManager, hasNoRemainingExpectations);
+  });
+
+  testWithoutContext('IOSDevice.installApp uses devicectl for CoreDevices', () async {
+    final IOSApp iosApp = PrebuiltIOSApp(
+      projectBundleId: 'app',
+      uncompressedBundle: fileSystem.currentDirectory,
+      applicationPackage: bundleDirectory,
+    );
+
+    final FakeProcessManager processManager = FakeProcessManager.empty();
+
+    final IOSDevice device = setUpIOSDevice(
+      processManager: processManager,
+      fileSystem: fileSystem,
+      interfaceType: DeviceConnectionInterface.attached,
+      artifacts: artifacts,
+      isCoreDevice: true,
     );
     final bool wasInstalled = await device.installApp(iosApp);
 
@@ -108,19 +118,34 @@ void main() {
       applicationPackage: bundleDirectory,
     );
     final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-      FakeCommand(command: <String>[
-        iosDeployPath,
-        '--id',
-        '1234',
-        '--uninstall_only',
-        '--bundle_id',
-        'app',
-      ], environment: const <String, String>{
-        'PATH': '/usr/bin:null',
-        ...kDyLdLibEntry,
-      })
+      FakeCommand(
+        command: <String>[iosDeployPath, '--id', '1234', '--uninstall_only', '--bundle_id', 'app'],
+        environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+      ),
     ]);
     final IOSDevice device = setUpIOSDevice(processManager: processManager, artifacts: artifacts);
+    final bool wasUninstalled = await device.uninstallApp(iosApp);
+
+    expect(wasUninstalled, true);
+    expect(processManager, hasNoRemainingExpectations);
+  });
+
+  testWithoutContext('IOSDevice.uninstallApp uses devicectl for CoreDevices', () async {
+    final IOSApp iosApp = PrebuiltIOSApp(
+      projectBundleId: 'app',
+      uncompressedBundle: fileSystem.currentDirectory,
+      applicationPackage: bundleDirectory,
+    );
+
+    final FakeProcessManager processManager = FakeProcessManager.empty();
+
+    final IOSDevice device = setUpIOSDevice(
+      processManager: processManager,
+      fileSystem: fileSystem,
+      interfaceType: DeviceConnectionInterface.attached,
+      artifacts: artifacts,
+      isCoreDevice: true,
+    );
     final bool wasUninstalled = await device.uninstallApp(iosApp);
 
     expect(wasUninstalled, true);
@@ -135,19 +160,20 @@ void main() {
         applicationPackage: bundleDirectory,
       );
       final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-        FakeCommand(command: <String>[
-          iosDeployPath,
-          '--id',
-          '1234',
-          '--exists',
-          '--timeout',
-          '10',
-          '--bundle_id',
-          'app',
-        ], environment: const <String, String>{
-          'PATH': '/usr/bin:null',
-          ...kDyLdLibEntry,
-        }, exception: const ProcessException('ios-deploy', <String>[])),
+        FakeCommand(
+          command: <String>[
+            iosDeployPath,
+            '--id',
+            '1234',
+            '--exists',
+            '--timeout',
+            '10',
+            '--bundle_id',
+            'app',
+          ],
+          environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+          exception: const ProcessException('ios-deploy', <String>[]),
+        ),
       ]);
       final IOSDevice device = setUpIOSDevice(processManager: processManager, artifacts: artifacts);
       final bool isAppInstalled = await device.isAppInstalled(iosApp);
@@ -163,19 +189,19 @@ void main() {
         applicationPackage: bundleDirectory,
       );
       final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-        FakeCommand(command: <String>[
-          iosDeployPath,
-          '--id',
-          '1234',
-          '--exists',
-          '--timeout',
-          '10',
-          '--bundle_id',
-          'app',
-        ], environment: const <String, String>{
-          'PATH': '/usr/bin:null',
-          ...kDyLdLibEntry,
-        })
+        FakeCommand(
+          command: <String>[
+            iosDeployPath,
+            '--id',
+            '1234',
+            '--exists',
+            '--timeout',
+            '10',
+            '--bundle_id',
+            'app',
+          ],
+          environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+        ),
       ]);
       final IOSDevice device = setUpIOSDevice(processManager: processManager, artifacts: artifacts);
       final bool isAppInstalled = await device.isAppInstalled(iosApp);
@@ -191,22 +217,27 @@ void main() {
         applicationPackage: bundleDirectory,
       );
       final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-        FakeCommand(command: <String>[
-          iosDeployPath,
-          '--id',
-          '1234',
-          '--exists',
-          '--timeout',
-          '10',
-          '--bundle_id',
-          'app',
-        ], environment: const <String, String>{
-          'PATH': '/usr/bin:null',
-          ...kDyLdLibEntry,
-        }, exitCode: 255)
+        FakeCommand(
+          command: <String>[
+            iosDeployPath,
+            '--id',
+            '1234',
+            '--exists',
+            '--timeout',
+            '10',
+            '--bundle_id',
+            'app',
+          ],
+          environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+          exitCode: 255,
+        ),
       ]);
       final BufferLogger logger = BufferLogger.test();
-      final IOSDevice device = setUpIOSDevice(processManager: processManager, logger: logger, artifacts: artifacts);
+      final IOSDevice device = setUpIOSDevice(
+        processManager: processManager,
+        logger: logger,
+        artifacts: artifacts,
+      );
       final bool isAppInstalled = await device.isAppInstalled(iosApp);
 
       expect(isAppInstalled, isFalse);
@@ -220,30 +251,58 @@ void main() {
         uncompressedBundle: bundleDirectory,
         applicationPackage: bundleDirectory,
       );
-      const String stderr = '2020-03-26 17:48:43.484 ios-deploy[21518:5501783] [ !! ] Timed out waiting for device';
+      const String stderr =
+          '2020-03-26 17:48:43.484 ios-deploy[21518:5501783] [ !! ] Timed out waiting for device';
       final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-        FakeCommand(command: <String>[
-          iosDeployPath,
-          '--id',
-          '1234',
-          '--exists',
-          '--timeout',
-          '10',
-          '--bundle_id',
-          'app',
-        ], environment: const <String, String>{
-          'PATH': '/usr/bin:null',
-          ...kDyLdLibEntry,
-        }, stderr: stderr,
-          exitCode: 253)
+        FakeCommand(
+          command: <String>[
+            iosDeployPath,
+            '--id',
+            '1234',
+            '--exists',
+            '--timeout',
+            '10',
+            '--bundle_id',
+            'app',
+          ],
+          environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+          stderr: stderr,
+          exitCode: 253,
+        ),
       ]);
       final BufferLogger logger = BufferLogger.test();
-      final IOSDevice device = setUpIOSDevice(processManager: processManager, logger: logger, artifacts: artifacts);
+      final IOSDevice device = setUpIOSDevice(
+        processManager: processManager,
+        logger: logger,
+        artifacts: artifacts,
+      );
       final bool isAppInstalled = await device.isAppInstalled(iosApp);
 
       expect(isAppInstalled, isFalse);
       expect(processManager, hasNoRemainingExpectations);
       expect(logger.traceText, contains(stderr));
+    });
+
+    testWithoutContext('uses devicectl for CoreDevices', () async {
+      final IOSApp iosApp = PrebuiltIOSApp(
+        projectBundleId: 'app',
+        uncompressedBundle: fileSystem.currentDirectory,
+        applicationPackage: bundleDirectory,
+      );
+
+      final FakeProcessManager processManager = FakeProcessManager.empty();
+
+      final IOSDevice device = setUpIOSDevice(
+        processManager: processManager,
+        fileSystem: fileSystem,
+        interfaceType: DeviceConnectionInterface.attached,
+        artifacts: artifacts,
+        isCoreDevice: true,
+      );
+      final bool wasInstalled = await device.isAppInstalled(iosApp);
+
+      expect(wasInstalled, true);
+      expect(processManager, hasNoRemainingExpectations);
     });
   });
 
@@ -254,17 +313,11 @@ void main() {
       applicationPackage: bundleDirectory,
     );
     final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-      FakeCommand(command: <String>[
-        iosDeployPath,
-        '--id',
-        '1234',
-        '--bundle',
-        '/',
-        '--no-wifi',
-      ], environment: const <String, String>{
-        'PATH': '/usr/bin:null',
-        ...kDyLdLibEntry,
-      }, exception: const ProcessException('ios-deploy', <String>[])),
+      FakeCommand(
+        command: <String>[iosDeployPath, '--id', '1234', '--bundle', '/', '--no-wifi'],
+        environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+        exception: const ProcessException('ios-deploy', <String>[]),
+      ),
     ]);
     final IOSDevice device = setUpIOSDevice(processManager: processManager, artifacts: artifacts);
     final bool wasAppInstalled = await device.installApp(iosApp);
@@ -279,17 +332,11 @@ void main() {
       applicationPackage: bundleDirectory,
     );
     final FakeProcessManager processManager = FakeProcessManager.list(<FakeCommand>[
-      FakeCommand(command: <String>[
-        iosDeployPath,
-        '--id',
-        '1234',
-        '--uninstall_only',
-        '--bundle_id',
-        'app',
-      ], environment: const <String, String>{
-        'PATH': '/usr/bin:null',
-        ...kDyLdLibEntry,
-      }, exception: const ProcessException('ios-deploy', <String>[])),
+      FakeCommand(
+        command: <String>[iosDeployPath, '--id', '1234', '--uninstall_only', '--bundle_id', 'app'],
+        environment: const <String, String>{'PATH': '/usr/bin:null', ...kDyLdLibEntry},
+        exception: const ProcessException('ios-deploy', <String>[]),
+      ),
     ]);
     final IOSDevice device = setUpIOSDevice(processManager: processManager, artifacts: artifacts);
     final bool wasAppUninstalled = await device.uninstallApp(iosApp);
@@ -299,11 +346,12 @@ void main() {
 }
 
 IOSDevice setUpIOSDevice({
-  @required ProcessManager processManager,
-  FileSystem fileSystem,
-  Logger logger,
-  IOSDeviceConnectionInterface interfaceType,
-  Artifacts artifacts,
+  required ProcessManager processManager,
+  FileSystem? fileSystem,
+  Logger? logger,
+  DeviceConnectionInterface? interfaceType,
+  Artifacts? artifacts,
+  bool isCoreDevice = false,
 }) {
   logger ??= BufferLogger.test();
   final FakePlatform platform = FakePlatform(
@@ -313,9 +361,7 @@ IOSDevice setUpIOSDevice({
   artifacts ??= Artifacts.test();
   final Cache cache = Cache.test(
     platform: platform,
-    artifacts: <ArtifactSet>[
-      FakeDyldEnvironmentArtifact(),
-    ],
+    artifacts: <ArtifactSet>[FakeDyldEnvironmentArtifact()],
     processManager: FakeProcessManager.any(),
   );
   return IOSDevice(
@@ -339,7 +385,32 @@ IOSDevice setUpIOSDevice({
       artifacts: artifacts,
       cache: cache,
     ),
+    coreDeviceControl: FakeIOSCoreDeviceControl(),
+    xcodeDebug: FakeXcodeDebug(),
     iProxy: IProxy.test(logger: logger, processManager: processManager),
-    interfaceType: interfaceType,
+    connectionInterface: interfaceType ?? DeviceConnectionInterface.attached,
+    isConnected: true,
+    isPaired: true,
+    devModeEnabled: true,
+    isCoreDevice: isCoreDevice,
   );
+}
+
+class FakeXcodeDebug extends Fake implements XcodeDebug {}
+
+class FakeIOSCoreDeviceControl extends Fake implements IOSCoreDeviceControl {
+  @override
+  Future<bool> installApp({required String deviceId, required String bundlePath}) async {
+    return true;
+  }
+
+  @override
+  Future<bool> uninstallApp({required String deviceId, required String bundleId}) async {
+    return true;
+  }
+
+  @override
+  Future<bool> isAppInstalled({required String deviceId, required String bundleId}) async {
+    return true;
+  }
 }
